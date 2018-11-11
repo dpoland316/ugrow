@@ -3,12 +3,12 @@
 
 '''
 import growPinConfig
-import credentialManager3
+import growConfig
 import dht
 import time
 from machine import Pin, ADC
 
-debug = credentialManager3.debug
+debug = growConfig.debug
 
 thSensor = dht.DHT22(Pin(growPinConfig.DHTPIN))
 lightSensor = ADC(0) # analog to digital conversion

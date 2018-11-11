@@ -1,4 +1,4 @@
-import growConfig
+import growPinConfig
 from utime import sleep_ms
 import machine
 import math
@@ -6,14 +6,14 @@ import math
 FREQ = 1000 # Frequency for PWM machine.Pins
 
 def init():
-    for pin in growConfig.LEDPINS:
+    for pin in growPinConfig.LEDPINS:
         myPin = machine.Pin(pin, machine.Pin.OUT)
         myPin.off()
         
     global mcr, mcg, mcb    
-    mcr = machine.PWM(machine.Pin(growConfig.MC_RED), FREQ)
-    mcg = machine.PWM(machine.Pin(growConfig.MC_GREEN), FREQ)
-    mcb = machine.PWM(machine.Pin(growConfig.MC_BLUE), FREQ)
+    mcr = machine.PWM(machine.Pin(growPinConfig.MC_RED), FREQ)
+    mcg = machine.PWM(machine.Pin(growPinConfig.MC_GREEN), FREQ)
+    mcb = machine.PWM(machine.Pin(growPinConfig.MC_BLUE), FREQ)
 
 def ledControl (pin, onoff):
     myPin = machine.Pin(pin, machine.Pin.OUT)
@@ -28,16 +28,10 @@ def blink (pin):
     sleep_ms(100)
     myPin.value(not bool(myPin.value()))
 
-def lightShow():
-    for i in range(25):
-        for color in growConfig.COLORS1: # COLOR (rainbow) / COLOR1 (riot)
-            pulse(color)
-
-
 def pulse(color, t=30):
     print("Callback executed, color: " + color)
     
-    if color in growConfig.COLORS:
+    if color in growPinConfig.COLORS:
         for a in range(10):             # repeat the pulsing
             for i in range(20):         # perform the pulse
                 if color == 'red':
