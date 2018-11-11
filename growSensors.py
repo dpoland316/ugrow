@@ -2,12 +2,15 @@
     Gather Sensor Data
 
 '''
-import growConfig
+import growPinConfig
+import credentialManager3
 import dht
 import time
 from machine import Pin, ADC
 
-thSensor = dht.DHT22(Pin(growConfig.DHTPIN))
+debug = credentialManager3.debug
+
+thSensor = dht.DHT22(Pin(growPinConfig.DHTPIN))
 lightSensor = ADC(0) # analog to digital conversion
 
 
@@ -44,7 +47,7 @@ def getLight():
 
     lux = (500 / RLDR);
 
-    if (growConfig.sensorDebug):
+    if (debug.getSensorDebug()):
         print("Light Sensor -- reading: " + str(sensorValue) + " percent: " + str(percentage)
                     + " RLDR: " + str(RLDR) + " Lux: " + str(lux))
 

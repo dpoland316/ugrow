@@ -5,7 +5,8 @@ import utime
 import ntptime
 import network
 import uasyncio as asyncio
-import growConfig
+import growPinConfig
+import credentialManager3
 import growWiFi
 import growSensors
 import growLED
@@ -14,17 +15,16 @@ gc.collect()
 #machine.freq(160000000) # turn the clock speed up to 11
 growLED.init() # set pin output and turn off
 
-print('Device ID is {}'.format(growConfig.growDeviceID))
+print('Device ID is {}'.format(credentialManager3.growDevice.getDeviceInfo[DeviceID]))
 print ('ESP8266 Diagnostics -- allocated memory BEFORE GC: {} memory free: {}'.format(gc.mem_alloc(), gc.mem_free()))
 gc.collect()
 print ('ESP8266 Diagnostics -- allocated memory AFTER GC: {} memory free: {}'.format(gc.mem_alloc(), gc.mem_free()))
 utime.sleep(2)
 
 
-
 def c8yCallback(topic, msg): # define callback for actions coming from cumulocity
     msg=msg.decode("UTF-8")
-    print("Callback executed. Message received on topic '" + str(topic) + "', message: '" + msg + "'")
+    print("Callback executed. Message received on topic '{}', message: '{}'".format(topic, msg))
     
     '''
     Messages received from cumulocity typically have the following format:
@@ -50,12 +50,17 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
         fragment = None
         cmd = None
         
-    print("Template: '" + template + "' Fragment: '" +  str(fragment) + "' Command: '" + str(cmd) + "'")
+    print("Template: '{}' Fragment: '{}' Command: '{}'".format(template, fragment, cmd))
     
     
     # Perform function based on template received
     if template == str(c8yMqtt.TEMPLATE_EXEC_RESTART):
         print('Restart command received...restarting...')
+ 
+        
+        # TODO STOP AND RESTART WIFI ON A RESTART
+        
+                
         machine.reset();
         
     elif template == str(c8yMqtt.TEMPLATE_EXEC_COMMAND):
@@ -78,20 +83,20 @@ def runCommand(cmd):
         else:
             action = parsedCmd[0]
             target, args = ''
-        print("Action: '" + action + "' Target: '" + target + "' Args: '" + args + "'")
+        print("Action: '{}' Target: '{}' Args: '{}'".format(action, target, args))
     else:
         print('Invalid command received -- empty content')
 
     if action.lower() == "set":
         if target.lower() == "led":
-            if args.lower() in (growConfig.COLORS):
+            if args.lower() in (growPinConfig.COLORS):
                 growLED.pulse(args)
 
 async def measureTempAndHumidity():
     while True:
         await asyncio.sleep(2) # pause and release resources for 2 secs
         tah = growSensors.getTempAndHumidity()
-        if growConfig.taskDebug: print(str(utime.localtime()) + ' -- Temp and Humidity: ' + str(tah))
+        if credentialManager3.debug.getTaskDebug(): print('{} -- Temp and Humidity: {}'.format(utime.localtime(), tah))
         c8y.publishTemp(tah.get("temp"))
         c8y.sendHumidity(tah.get("humidity"))
     
@@ -100,7 +105,7 @@ async def measureLight():
     while True:
         await asyncio.sleep(1) # pause and release resources
         lux = growSensors.getLight()
-        if growConfig.taskDebug: print(str(utime.localtime()) + ' -- Light: ' + str(lux))
+        if credentialManager3.debug.getTaskDebug(): print('{} -- Light: {}'.format(utime.localtime(), lux))
         c8y.sendLight(lux)
     
     
@@ -117,11 +122,12 @@ async def setTime():
         before = gc.mem_free()
         gc.collect()
         after = gc.mem_free()
-        print (str(utime.localtime()) + ' -- ESP8266 Diagnostics -- Runnning gc. Free memory before GC: ' + str(before) + ', free memory after GC: ' + str(after))
+        print ('{} -- ESP8266 Diagnostics -- Runnning gc. Free memory before GC: {}, free memory after GC: {}'
+               .format(utime.localtime(), before, after))
         
         try:
             ntptime.settime()
-            if growConfig.taskDebug: print('Time synchronized to GMT: {}'.format(utime.localtime()))
+            if credentialManager3.debug.getTaskDebug(): print('Time synchronized to GMT: {}'.format(utime.localtime()))
             utime.localtime() # needed to prevent overflow
         except OSError as ose:
             print("Caught OS Error from setTime: {}".format(ose))
@@ -136,7 +142,7 @@ async def test(msg, n):
 
 async def checkWiFi():  
     while sta_if.isconnected():
-        growLED.ledControl(growConfig.WIFIPIN, 'on')
+        growLED.ledControl(growPinConfig.WIFIPIN, 'on')
         await asyncio.sleep_ms(100)
         
 async def checkMqtt():  
@@ -161,7 +167,7 @@ def runAsyncTasks():
 def reconnectWifi():
     print('Wifi disconnected. Attempting to reconnect...')
     sta_if.disconnect()
-    growLED.ledControl(growConfig.WIFIPIN, 'off')
+    growLED.ledControl(growPinConfig.WIFIPIN, 'off')
     while not sta_if.isconnected():
         growWiFi.connectWiFi()
         utime.sleep(1)
