@@ -14,7 +14,8 @@ gc.collect()
 #machine.freq(160000000) # turn the clock speed up to 11
 growLED.init() # set pin output and turn off
 
-print('Device ID is {}'.format(growConfig.growDevice.getDeviceInfo()['DeviceID']))
+deviceID = growConfig.growDevice.getDeviceInfo()['DeviceID']
+print('Device ID is {}'.format(deviceID))
 print ('ESP8266 Diagnostics -- allocated memory BEFORE GC: {} memory free: {}'.format(gc.mem_alloc(), gc.mem_free()))
 gc.collect()
 print ('ESP8266 Diagnostics -- allocated memory AFTER GC: {} memory free: {}'.format(gc.mem_alloc(), gc.mem_free()))
@@ -32,7 +33,7 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
     For example:
     510,DeviceSerial                   --  Restarts Device
     511,DeviceSerial,SET LED BLUE      -- Executes command
-    513,DeviceSerial,"val1=1\nval2=2" -- Updates device configuration
+    513,DeviceSerial,"val1=1\nval2=2" -- Updates tgtDevice configuration
     
     Processing consists of parsing the initial header (template) values, then 
     parsing the command arguments if applicable.
@@ -51,62 +52,65 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
         #=======================================================================
         
         if len(parsedMsg) == 3:
-            template, fragment, payload = [i for i in parsedMsg]
+            template, tgtDevice, payload = [i for i in parsedMsg]
         elif len(parsedMsg) == 2:
-            template, fragment = [i for i in parsedMsg]
+            template, tgtDevice = [i for i in parsedMsg]
             payload = None
         else:
             template = parsedMsg[0]
-            fragment = None
+            tgtDevice = None
             payload = None
         
         gc.collect()
             
-        print("Template: '{}' Fragment: '{}' Payload: '{}'".format(template, fragment, payload))
-        if growConfig.debug.getC8yDebug():
-            print ('Sending task executing operation')
+        print("Template: '{}' Device: '{}' Payload: '{}'".format(template, tgtDevice, payload))
         
-        c8y.sendOperationExecuting('executing', fragment)
-        
-        if growConfig.debug.getC8yDebug():
-            print ('Sent task executing operation')
-            
-        # Perform function based on template received
-        if template == str(c8yMqtt.TEMPLATE_EXEC_RESTART):
-            print('Restart command received...restarting...')
-            growWiFi.disconnectWiFi() # search thru WiFi config on restart, 
-                                      # instead of only connecting to last network
-            growWiFi.connectWiFi()    # refresh network connection from configured networks
-            machine.reset();
-            
-        elif template == str(c8yMqtt.TEMPLATE_EXEC_COMMAND):
-            print('Executing requested operation: ')
-            runCommand(fragment, payload)
-            
-        elif template == str(c8yMqtt.TEMPLATE_EXEC_CONFIG):
-            print("Update configuration action requested...")
-            gc.collect()
-            
-            gcm = growConfig.growConfigManager.getInstance()
-            success, message = gcm.saveConfig(payload)
-            
+        if tgtDevice == deviceID:           # filter for operations relating to this device
             if growConfig.debug.getC8yDebug():
-                print('Update Config results -- updated: {} -- message: {}'.format(success, message))          
+                print ('Sending task executing operation')
             
-            if success:{
-                # send successful message
-                c8y.sendOperationExecuting('success', fragment)
-                }
-            else:
-                c8y.sendOperationExecuting('error', fragment, message)
-        else:
-            print("Unknown operation requested... ignoring")
-            if growConfig.debug.getC8yDebug():
-                print ('Sending task error operation')
-            c8y.sendOperationExecuting('error', fragment, 'Unknown operation requested.')
+            c8y.sendOperationExecuting('executing', tgtDevice)
+            
             if growConfig.debug.getC8yDebug():
                 print ('Sent task executing operation')
-    
+                
+            # Perform function based on template received
+            if template == str(c8yMqtt.TEMPLATE_EXEC_RESTART):
+                print('Restart command received...restarting...')
+                growWiFi.disconnectWiFi() # search thru WiFi config on restart, 
+                                          # instead of only connecting to last network
+                growWiFi.connectWiFi()    # refresh network connection from configured networks
+                machine.reset();
+                
+            elif template == str(c8yMqtt.TEMPLATE_EXEC_COMMAND):
+                print('Executing requested operation: ')
+                runCommand(tgtDevice, payload)
+                
+            elif template == str(c8yMqtt.TEMPLATE_EXEC_CONFIG):
+                print("Update configuration action requested...")
+                gc.collect()
+                
+                gcm = growConfig.growConfigManager.getInstance()
+                success, message = gcm.saveConfig(payload)
+                
+                if growConfig.debug.getC8yDebug():
+                    print('Update Config results -- updated: {} -- message: {}'.format(success, message))          
+                
+                if success:{
+                    # send successful message
+                    c8y.sendOperationExecuting('success', tgtDevice)
+                    }
+                else:
+                    c8y.sendOperationExecuting('error', tgtDevice, message)
+            else:
+                print("Unknown operation requested... ignoring")
+                if growConfig.debug.getC8yDebug():
+                    print ('Sending task error operation')
+                c8y.sendOperationExecuting('error', tgtDevice, 'Unknown operation requested.')
+                if growConfig.debug.getC8yDebug():
+                    print ('Sent task executing operation')
+        else:
+            print("Received operation request for different device (ignoring). Requested serial: {} ... my serial: {})".format(tgtDevice, deviceID))
     except Exception as e:
         import sys
         c8y.sendOperationExecuting('error', 'c8y_GrowOperation', 'Invalid message format or unknown operation requested.')
@@ -155,7 +159,13 @@ async def measureLight():
         lux = growSensors.getLight()
         if growConfig.debug.getTaskDebug(): print('{} -- Light: {}'.format(utime.localtime(), lux))
         c8y.sendLight(lux)
-    
+
+async def measureSoilMoisture():
+    while True:
+        await asyncio.sleep(60) # pause and release resources
+        moisture = growSensors.getSoilMoisture()
+        if growConfig.debug.getTaskDebug(): print('{} -- Soil: {}%'.format(utime.localtime(), moisture))
+        c8y.sendSoilMoisture(moisture)    
     
 async def checkMsgs():
     while True:
@@ -204,6 +214,7 @@ def runAsyncTasks():
     loop = asyncio.get_event_loop()
     loop.create_task(measureTempAndHumidity()) 
     loop.create_task(measureLight()) 
+    loop.create_task(measureSoilMoisture()) 
     loop.create_task(setTime())
     #loop.create_task(test("Testing...", 1))
     loop.create_task(checkMsgs())

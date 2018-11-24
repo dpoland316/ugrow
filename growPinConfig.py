@@ -1,15 +1,21 @@
 # Define LED pins
 YELLOW   =   12
-BLUE     =   5
+BLUE     =   0
 GREEN    =   14
-MC_RED   =   4
-MC_GREEN =   15
-MC_BLUE  =   0
+#MC_RED   =   
+#MC_GREEN =   
+#MC_BLUE  =   
 
 LEDPINS=[YELLOW,BLUE,GREEN]
 
+#Define I2C Pins
+SCL=5
+SDA=4
+
 # Define Sensor Pins
-LDR     = 0       # A0 Light Sensor (Light Dependent Resistor)
+LDR     = 1       # ADC Channel 1 Light Sensor (Light Dependent Resistor)
+SOILPWR = 15      # Sensor only receives power to take a reading (to prevent degradation)
+SOIL    = 3       # ADC Channel 3
 DHTPIN  = 13      # Temp and Humidity
 DHTTYPE = 'DHT22'
 SOIL    = 'N/A'
