@@ -1,5 +1,6 @@
 import os
 import ujson
+import network
 import ubinascii
 import growInitialJsonConfig
 
@@ -38,11 +39,11 @@ class growConfigManager():
                       ],
                   "MQTTDefault": "provider1"
                   "MQTTLocations": [
-                        { "provider1": {
+                        { "pubServer": {
                             "server": "server1", "port": 1883,
                             "user": "joe, "password": "horses" } 
                         },
-                        { "provider2": {
+                        { "subServer": {
                             "server": "server2", "port": 14273,
                             "user": "sally", "password": "rainbows" }
                         } ]
@@ -60,6 +61,12 @@ class growConfigManager():
             '''
             print('No config file found... initializing...')
             self.dict = ujson.loads(growInitialJsonConfig.initialConfig) # get init json file
+            
+            # init SerialNumber
+            mac = ubinascii.hexlify(network.WLAN().config('mac'),':').decode()
+            mac = mac.replace(':', '').upper()
+            
+            self.dict['Device']['ModuleSerialNumber'] = mac
          
             with open(cfgFile, 'w') as f:
                 # dump initial config to file
@@ -80,12 +87,15 @@ class growConfigManager():
     def saveConfig(self, dictJson):
         import growWiFi
         try:
-            tempDict=ujson.loads(dictJson) # if json is invalid this will throw exception
+            print("Saving new configuration: {}".format(dictJson))
+            tempDict=ujson.loads(dictJson)
             
             ssids = list()
             for loc in tempDict['WiFiLocations']:
                 for key in loc.keys():
                     ssids.append(loc[key]['ssid'])
+            
+            print("ssids: {}".format(ssids))
             
             # check if any configured WiFi's are found beofre saving (validate WiFi config)
             if growWiFi.checkNetworkFound(ssids):
@@ -180,7 +190,6 @@ class growDevice:
         '''
         Returns dict with following keys:
         
-        "DeviceID": "1A2S3DFCX5434",
         "ModuleName": "Grow Module v0.5,0.0.3",
         "ModuleSerialNumber": "1234554322",
         "ModuleRevision": "0.0.1",

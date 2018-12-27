@@ -13,7 +13,8 @@ def init():
     soilPwr = machine.Pin(growPinConfig.SOILPWR, machine.Pin.OUT)
     soilPwr.off()
     
-    
+    global alertPin
+    alertPin = machine.PWM(machine.Pin(growPinConfig.ALERTPIN), FREQ)
     #===========================================================================
     # global mcr, mcg, mcb    
     # mcr = machine.PWM(machine.Pin(growPinConfig.MC_RED), FREQ)
@@ -33,6 +34,16 @@ def blink (pin):
     myPin.value(not bool(myPin.value())) # convert 0 and 1 to true and false and toggle it
     sleep_ms(100)
     myPin.value(not bool(myPin.value()))
+    
+    
+def alert(toggle):  
+    if toggle:
+        t=30
+        for a in range(3):             # repeat the pulsing
+            for i in range(19):         # perform the pulse
+                alertPin.duty(int(math.sin(i / 10 * math.pi) * 500 + 500))
+                sleep_ms(t)
+        alertPin.duty(0) # turn off LED
 #===============================================================================
 # 
 # def pulse(color, t=30):

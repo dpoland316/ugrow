@@ -14,12 +14,13 @@ gc.collect()
 #machine.freq(160000000) # turn the clock speed up to 11
 growLED.init() # set pin output and turn off
 
-deviceID = growConfig.growDevice.getDeviceInfo()['DeviceID']
+deviceID = growConfig.growDevice.getDeviceInfo()['ModuleSerialNumber']
 print('Device ID is {}'.format(deviceID))
 print ('ESP8266 Diagnostics -- allocated memory BEFORE GC: {} memory free: {}'.format(gc.mem_alloc(), gc.mem_free()))
 gc.collect()
 print ('ESP8266 Diagnostics -- allocated memory AFTER GC: {} memory free: {}'.format(gc.mem_alloc(), gc.mem_free()))
 utime.sleep(2)
+alert=False
 
 
 def c8yCallback(topic, msg): # define callback for actions coming from cumulocity
@@ -32,7 +33,7 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
     
     For example:
     510,DeviceSerial                   --  Restarts Device
-    511,DeviceSerial,SET LED BLUE      -- Executes command
+    511,DeviceSerial,SET ALERT ON      -- Executes command
     513,DeviceSerial,"val1=1\nval2=2" -- Updates tgtDevice configuration
     
     Processing consists of parsing the initial header (template) values, then 
@@ -61,6 +62,8 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
             tgtDevice = None
             payload = None
         
+        template = int(template)
+        
         gc.collect()
             
         print("Template: '{}' Device: '{}' Payload: '{}'".format(template, tgtDevice, payload))
@@ -69,55 +72,89 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
             if growConfig.debug.getC8yDebug():
                 print ('Sending task executing operation')
             
-            c8y.sendOperationExecuting('executing', tgtDevice)
+            c8y.sendOperationExecuting('executing', c8yMqtt.TEMPLATE_FRAGMENTS[template])
             
             if growConfig.debug.getC8yDebug():
                 print ('Sent task executing operation')
                 
             # Perform function based on template received
-            if template == str(c8yMqtt.TEMPLATE_EXEC_RESTART):
+            
+            #===================================================================
+            # RESTART DEVICE
+            #===================================================================
+            if template == c8yMqtt.TEMPLATE_EXEC_RESTART:
                 print('Restart command received...restarting...')
                 growWiFi.disconnectWiFi() # search thru WiFi config on restart, 
                                           # instead of only connecting to last network
                 growWiFi.connectWiFi()    # refresh network connection from configured networks
                 machine.reset();
                 
-            elif template == str(c8yMqtt.TEMPLATE_EXEC_COMMAND):
+            #===================================================================
+            # EXECUTE SHELL COMMAND    
+            #===================================================================
+            elif template == c8yMqtt.TEMPLATE_EXEC_COMMAND:
                 print('Executing requested operation: ')
                 runCommand(tgtDevice, payload)
-                
-            elif template == str(c8yMqtt.TEMPLATE_EXEC_CONFIG):
+            
+            
+            #===================================================================
+            # UPDATE DEVICE CONFIGURATION    
+            #===================================================================
+            elif template == c8yMqtt.TEMPLATE_EXEC_CONFIG:
                 print("Update configuration action requested...")
                 gc.collect()
                 
                 gcm = growConfig.growConfigManager.getInstance()
-                success, message = gcm.saveConfig(payload)
+                
+                if growConfig.debug.getC8yDebug():
+                    print("Raw config payload: {}".format(payload))
+                
+                
+                # C8Y sends a string with embedded escape sequences. This will remove 
+                # extra slashes (i.e. so \"port\" becomes "port")
+                formatted_payload = payload.replace(r'\"','"')
+                                
+                # C8Y also sends everything wrapped in quotations (which is is invalid 
+                # for JSON)
+                if (formatted_payload[0] == '"'):
+                    # Return the string without the enclosing quotations
+                    formatted_payload = formatted_payload[1:-1]     
+                
+                
+                if growConfig.debug.getC8yDebug():
+                    print("Formatted payload: " + formatted_payload)
+                  
+                
+                success, message = gcm.saveConfig(formatted_payload)
                 
                 if growConfig.debug.getC8yDebug():
                     print('Update Config results -- updated: {} -- message: {}'.format(success, message))          
                 
                 if success:{
                     # send successful message
-                    c8y.sendOperationExecuting('success', tgtDevice)
+                    c8y.sendOperationExecuting('success', c8yMqtt.TEMPLATE_FRAGMENTS[template])
                     }
                 else:
-                    c8y.sendOperationExecuting('error', tgtDevice, message)
+                    c8y.sendOperationExecuting('error', c8yMqtt.TEMPLATE_FRAGMENTS[template], message)
+                    
+                    
             else:
                 print("Unknown operation requested... ignoring")
                 if growConfig.debug.getC8yDebug():
                     print ('Sending task error operation')
-                c8y.sendOperationExecuting('error', tgtDevice, 'Unknown operation requested.')
+                c8y.sendOperationExecuting('error', c8yMqtt.TEMPLATE_FRAGMENTS[template], 'Unknown operation requested.')
                 if growConfig.debug.getC8yDebug():
                     print ('Sent task executing operation')
         else:
             print("Received operation request for different device (ignoring). Requested serial: {} ... my serial: {})".format(tgtDevice, deviceID))
     except Exception as e:
         import sys
-        c8y.sendOperationExecuting('error', 'c8y_GrowOperation', 'Invalid message format or unknown operation requested.')
+        c8y.sendOperationExecuting('error', c8yMqtt.TEMPLATE_FRAGMENTS[template], 'Invalid message format or unknown operation requested.')
         print ('Exception occured in callback: {}'.format(sys.print_exception(e)))
 
         
 def runCommand(fragment, cmd):
+    global alert
     if cmd != None:
         parsedCmd = cmd.split(" ",2)
         if len(parsedCmd) >= 3:
@@ -131,18 +168,23 @@ def runCommand(fragment, cmd):
         print("Action: '{}' Target: '{}' Args: '{}'".format(action, target, args))
     else:
         print('Invalid command received -- empty content')
+        c8y.sendOperationExecuting('error', c8yMqtt.TEMPLATE_FRAGMENTS[c8yMqtt.TEMPLATE_EXEC_COMMAND], 'Invalid command received -- empty content')
 
     if action.lower() == "set":
-        if target.lower() == "led":
-            if args.lower() in (growPinConfig.COLORS):
-                growLED.pulse(args)
-                c8y.sendOperationExecuting('success', fragment)
+        if target.lower() == "alert":
+            if args.lower() != 'on':
+                alert=False
+            else:
+                alert=True
+                    
+            c8y.sendOperationExecuting('success', c8yMqtt.TEMPLATE_FRAGMENTS[c8yMqtt.TEMPLATE_EXEC_COMMAND])
+            
     elif action.lower() == "get":
         if target.lower() == "config":
             gcm = growConfig.growConfigManager.getInstance()
-            c8y.sendOperationExecuting('success', fragment, gcm.getConfig())
+            c8y.sendOperationExecuting('success', c8yMqtt.TEMPLATE_FRAGMENTS[c8yMqtt.TEMPLATE_EXEC_COMMAND], '"' + gcm.getConfig() + '"')
     else:
-        c8y.sendOperationExecuting('error', fragment, 'Command not supported')
+        c8y.sendOperationExecuting('error', c8yMqtt.TEMPLATE_FRAGMENTS[c8yMqtt.TEMPLATE_EXEC_COMMAND], 'Command not supported')
         
 async def measureTempAndHumidity():
     while True:
@@ -156,22 +198,23 @@ async def measureTempAndHumidity():
 async def measureLight():
     while True:
         await asyncio.sleep(1) # pause and release resources
-        lux = growSensors.getLight()
-        if growConfig.debug.getTaskDebug(): print('{} -- Light: {}'.format(utime.localtime(), lux))
-        c8y.sendLight(lux)
-
+        try:
+            lux = growSensors.getLight()
+            if growConfig.debug.getTaskDebug(): print('{} -- Light: {}'.format(utime.localtime(), lux))
+            c8y.sendLight(lux)
+        except Exception as e:
+            print("Caught error from measureLight: {}".format(e))
+            
 async def measureSoilMoisture():
     while True:
         await asyncio.sleep(60) # pause and release resources
-        moisture = growSensors.getSoilMoisture()
-        if growConfig.debug.getTaskDebug(): print('{} -- Soil: {}%'.format(utime.localtime(), moisture))
-        c8y.sendSoilMoisture(moisture)    
+        try:
+            moisture = growSensors.getSoilMoisture()
+            if growConfig.debug.getTaskDebug(): print('{} -- Soil: {}%'.format(utime.localtime(), moisture))
+            c8y.sendSoilMoisture(moisture)    
+        except Exception as e:
+            print("Caught error from measureSoilMoisture: {}".format(e))    
     
-async def checkMsgs():
-    while True:
-        await asyncio.sleep(1) # pause and release resources
-        c8yHack.check_msg()
-
 async def setTime():
     # RTC clock is notorously bad on ESP8266, so time needs to be resync'ed often
     # Additionally there is a known buffer overflow issue every 07:45:00, unless
@@ -190,24 +233,23 @@ async def setTime():
         except OSError as ose:
             print("Caught OS Error from setTime: {}".format(ose))
         finally:
-            await asyncio.sleep(5 * 60) # pause and release resources
-
-async def test(msg, n):
-    while True:
-        print(str(utime.localtime()) + msg)
-        await asyncio.sleep(n)
-
+            await asyncio.sleep(5 * 60) # pause and release resou
 async def checkWiFi():  
     while growWiFi.isConnected():
         growLED.ledControl(growPinConfig.WIFIPIN, 'on')
-        await asyncio.sleep_ms(100)
+        await asyncio.sleep_ms(10)
         
-async def checkMqtt():  
+async def checkAlert():  
     while True:
-        await asyncio.sleep_ms(250)
-        if not c8y.isconnected():       # MQTT not connected
-            if growWiFi.isConnected():  # WiFi is connected
-                connectMqtt()           # reconnect 
+        if growConfig.debug.getTaskDebug(): print('Current alert setting: {}'.format(alert))
+        growLED.alert(alert)        
+        await asyncio.sleep_ms(2000)
+        
+async def checkMsgs():
+    while True:
+        await asyncio.sleep(1) # pause and release resources
+        if growWiFi.isConnected():  # WiFi is connected
+            c8yHack.check_msg()
 
 def runAsyncTasks():
     print('Starting async tasks...')
@@ -216,9 +258,8 @@ def runAsyncTasks():
     loop.create_task(measureLight()) 
     loop.create_task(measureSoilMoisture()) 
     loop.create_task(setTime())
-    #loop.create_task(test("Testing...", 1))
     loop.create_task(checkMsgs())
-    #loop.run_forever()
+    loop.create_task(checkAlert())
     loop.run_until_complete(checkWiFi())
 
 def reconnectWifi():
@@ -241,13 +282,16 @@ def runGrow():
     '''
     Main Program Loop(s)
     '''
-    
+
     # Establish WiFi
     growWiFi.connectWiFi()
     connectMqtt()
     
+    # send "Restart complete" signal. Will be ignored if not applicable.
+    c8y.sendOperationExecuting('success', c8yMqtt.TEMPLATE_FRAGMENTS[c8yMqtt.TEMPLATE_EXEC_RESTART])
+    
     gc.collect()
     
     while True:
-        runAsyncTasks()
-        reconnectWifi()
+        runAsyncTasks() 
+        reconnectWifi() # This only ever gets run if the Wifi signal is lost

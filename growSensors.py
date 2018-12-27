@@ -45,8 +45,10 @@ thSensor = dht.DHT22(Pin(growPinConfig.DHTPIN))
 #lightSensor = ADC(0) # analog to digital conversion
 
 # init the ADC sensors
-ads.set_conv(rate, 1)
-ads.set_conv(rate, 3)
+soilSensorChannel=growPinConfig.SOIL
+lightSensorChannel=growPinConfig.LDR
+ads.set_conv(rate, lightSensorChannel)
+ads.set_conv(rate, soilSensorChannel)
 
 
 def getTempAndHumidity():
@@ -73,7 +75,7 @@ def getLight():
 
     '''
     vIn=3.3     # ESP8266 max voltage is 3.3v
-    vOut = ads.raw_to_v(ads.read(rate, 1)) # read the input on analog pin
+    vOut = ads.raw_to_v(ads.read(rate, lightSensorChannel)) # read the input on analog pin
     
     # percentage of light as a function of the range of the sensor
     percentage = (vOut / vIn) * 100.0
@@ -90,7 +92,7 @@ def getLight():
 
 def getSoilMoisture():
     soilSensorPwr.on()
-    moistureReading=ads.read(rate, 3)
+    moistureReading=ads.read(rate, soilSensorChannel)
     soilVoltage = ads.raw_to_v(moistureReading)
     soilSensorPwr.off()
     
