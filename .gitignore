@@ -1,7 +1,9 @@
 
-/c8yMqtt.py
 /credentialManager.py
 /growInitialJsonConfig.py
 /config.json
 /loadIt.bat
 /boot.py
+/soilLightADCTest.py
+/ADCTest.py
+/simpleMqttDave.py
