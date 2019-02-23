@@ -21,7 +21,7 @@ gc.collect()
 print ('ESP8266 Diagnostics -- allocated memory AFTER GC: {} memory free: {}'.format(gc.mem_alloc(), gc.mem_free()))
 utime.sleep(2)
 alert=False
-
+triggerRestart=False
 
 def c8yCallback(topic, msg): # define callback for actions coming from cumulocity
     msg=msg.decode("UTF-8")
@@ -82,12 +82,11 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
             #===================================================================
             # RESTART DEVICE
             #===================================================================
+            global triggerRestart
             if template == c8yMqtt.TEMPLATE_EXEC_RESTART:
                 print('Restart command received...restarting...')
-                growWiFi.disconnectWiFi() # search thru WiFi config on restart, 
-                                          # instead of only connecting to last network
-                growWiFi.connectWiFi()    # refresh network connection from configured networks
-                machine.reset();
+                triggerRestart=True # Async trigger of restart, so MQTT event 
+                                    # won't be redelivered.
                 
             #===================================================================
             # EXECUTE SHELL COMMAND    
@@ -247,9 +246,20 @@ async def checkAlert():
         
 async def checkMsgs():
     while True:
-        await asyncio.sleep(1) # pause and release resources
+        await asyncio.sleep(1)      # pause and release resources
         if growWiFi.isConnected():  # WiFi is connected
             c8yHack.check_msg()
+
+async def checkRestart():
+    while True:
+        await asyncio.sleep(5)            # pause and release resources
+        if triggerRestart == True:        # WiFi is connected
+                utime.sleep(2)            # wait for MQTT restart trigger message to be ack'ed
+                growWiFi.disconnectWiFi() # search thru WiFi config on restart, 
+                                          # instead of only connecting to last network
+                growWiFi.connectWiFi()    # refresh network connection from configured networks
+                machine.reset();
+
 
 def runAsyncTasks():
     print('Starting async tasks...')
@@ -260,6 +270,7 @@ def runAsyncTasks():
     loop.create_task(setTime())
     loop.create_task(checkMsgs())
     loop.create_task(checkAlert())
+    loop.create_task(checkRestart())
     loop.run_until_complete(checkWiFi())
 
 def reconnectWifi():
@@ -285,6 +296,10 @@ def runGrow():
 
     # Establish WiFi
     growWiFi.connectWiFi()
+    
+    while not growWiFi.isConnected():
+        utime.sleep(.5)
+        
     connectMqtt()
     
     # send "Restart complete" signal. Will be ignored if not applicable.
