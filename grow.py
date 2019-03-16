@@ -69,6 +69,13 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
         print("Template: '{}' Device: '{}' Payload: '{}'".format(template, tgtDevice, payload))
         
         if tgtDevice == deviceID:           # filter for operations relating to this device
+            if growConfig.debug.getC8yDebug():
+                print ('Sending task executing operation')
+            
+            c8y.sendOperationExecuting('executing', c8yMqtt.TEMPLATE_FRAGMENTS[template])
+            
+            if growConfig.debug.getC8yDebug():
+                print ('Sent task executing operation')
                 
             # Perform function based on template received
             
@@ -77,14 +84,6 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
             #===================================================================
             global triggerRestart
             if template == c8yMqtt.TEMPLATE_EXEC_RESTART:
-                if growConfig.debug.getC8yDebug():
-                    print ('Sending restart task executing operation')
-                
-                c8y.sendOperationExecuting('executing', c8yMqtt.TEMPLATE_FRAGMENTS[template])
-                
-                if growConfig.debug.getC8yDebug():
-                    print ('Sent restart task executing operation')                
-                
                 print('Restart command received...restarting...')
                 triggerRestart=True # Async trigger of restart, so MQTT event 
                                     # won't be redelivered.
@@ -93,14 +92,6 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
             # EXECUTE SHELL COMMAND    
             #===================================================================
             elif template == c8yMqtt.TEMPLATE_EXEC_COMMAND:
-                if growConfig.debug.getC8yDebug():
-                    print ('Sending command task executing operation')
-                
-                c8y.sendOperationExecuting('executing', c8yMqtt.TEMPLATE_FRAGMENTS[template])
-                
-                if growConfig.debug.getC8yDebug():
-                    print ('Sent command task executing operation') 
-                
                 print('Executing requested operation: ')
                 runCommand(tgtDevice, payload)
             
@@ -109,14 +100,6 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
             # UPDATE DEVICE CONFIGURATION    
             #===================================================================
             elif template == c8yMqtt.TEMPLATE_EXEC_CONFIG:
-                if growConfig.debug.getC8yDebug():
-                    print ('Sending device config task executing operation')
-                
-                c8y.sendOperationExecuting('executing', c8yMqtt.TEMPLATE_FRAGMENTS[template])
-                
-                if growConfig.debug.getC8yDebug():
-                    print ('Sent device config task executing operation') 
-                                    
                 print("Update configuration action requested...")
                 gc.collect()
                 
@@ -158,15 +141,9 @@ def c8yCallback(topic, msg): # define callback for actions coming from cumulocit
                 print("Unknown operation requested... ignoring")
                 if growConfig.debug.getC8yDebug():
                     print ('Sending task error operation')
-                
-                if template in c8yMqtt.TEMPLATE_FRAGMENTS:
-                    c8y.sendOperationExecuting('error', c8yMqtt.TEMPLATE_FRAGMENTS[template], 'Unknown operation requested.')
-                
-                    if growConfig.debug.getC8yDebug():
-                        print ('Sent task executing operation')
-                else:
-                    if growConfig.debug.getC8yDebug():
-                        print ('Unknown template type - no failure response sent.')
+                c8y.sendOperationExecuting('error', c8yMqtt.TEMPLATE_FRAGMENTS[template], 'Unknown operation requested.')
+                if growConfig.debug.getC8yDebug():
+                    print ('Sent task executing operation')
         else:
             print("Received operation request for different device (ignoring). Requested serial: {} ... my serial: {})".format(tgtDevice, deviceID))
     except Exception as e:
@@ -273,17 +250,6 @@ async def checkMsgs():
         if growWiFi.isConnected():  # WiFi is connected
             c8yHack.check_msg()
 
-async def restartSubscription():
-    global c8yHack
-    
-    while True:
-        await asyncio.sleep(300)      # pause and release resources
-        if growWiFi.isConnected():    # WiFi is connected
-            # This is a hack to workaround an issue where 
-            # the MITM PAHO client is restarted on the Mosquitto box
-                
-            c8yHack = c8yMqtt.C8ySubscriptionHack(c8yCallback)
-
 async def checkRestart():
     while True:
         await asyncio.sleep(5)            # pause and release resources
@@ -305,7 +271,6 @@ def runAsyncTasks():
     loop.create_task(checkMsgs())
     loop.create_task(checkAlert())
     loop.create_task(checkRestart())
-    loop.create_task(restartSubscription())
     loop.run_until_complete(checkWiFi())
 
 def reconnectWifi():
