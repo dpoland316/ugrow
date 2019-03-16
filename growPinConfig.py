@@ -3,9 +3,6 @@ BLUE     =   12 #D6
 GREEN    =   13 #D7
 YELLOW   =   15 #D8
 RED      =   14 #D5 
-#MC_RED   =   
-#MC_GREEN =   
-#MC_BLUE  =   
 
 LEDPINS=[YELLOW,BLUE,GREEN]
 
